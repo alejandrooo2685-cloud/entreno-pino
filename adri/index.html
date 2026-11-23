@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Entreno Adri</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="img/icon-192.png">
+<link rel="apple-touch-icon" href="img/icon-180.png">
+<meta name="theme-color" content="#0C0B09">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Entreno Adri">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Figtree:wght@400;600;700&display=swap">
+<style>
+:root{color-scheme:dark;--bg:#0C0B09;--surface:#171510;--surface-2:#242118;--ink:#F4ECD4;--muted:#A79F88;--line:#332F23;--accent:#F6C21B;--accent-ink:#0C0B09;--danger:#FF5F4E;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background-color:var(--bg);background-image:radial-gradient(120% 60% at 100% 0%,rgba(246,194,27,.2),transparent 60%),radial-gradient(rgba(246,194,27,.16) 1px,transparent 1.6px);background-size:auto,8px 8px;color:var(--ink);font:15px/1.45 "Figtree",system-ui,-apple-system,"Segoe UI",sans-serif}
+.wrap{max-width:560px;margin:0 auto;padding:32px max(16px,env(safe-area-inset-right,0px)) 48px max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:20px}
+.crest{display:flex;align-items:center;gap:14px}.crest img{width:80px;height:80px}
+.stars{color:var(--accent);letter-spacing:.3em;font-size:13px}
+.club{font-family:"Anton",Impact,sans-serif;font-size:22px;letter-spacing:.06em}
+.label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+h1{margin:0;font-family:"Anton",Impact,sans-serif;font-weight:400;text-transform:uppercase;font-size:clamp(42px,12vw,64px);line-height:.92;color:var(--accent)}
+.lema{width:100%;border-radius:10px;border:1px solid var(--line)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.input{width:100%;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:11px 12px;color:inherit;font:inherit}
+.input:focus{outline:none;border-color:var(--accent)}
+.btn{border:0;border-radius:11px;padding:12px 14px;font:inherit;font-weight:700;cursor:pointer;background:var(--accent);color:var(--accent-ink)}
+.btn:disabled{opacity:.5}
+.ghost{background:transparent;color:var(--muted);border:1px solid var(--line);font-weight:600;align-self:flex-start;padding:8px 12px}
+.st{display:flex;align-items:center;gap:16px;text-decoration:none;color:inherit;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px;transition:border-color .12s}
+.st:hover,.st:focus-visible{border-color:var(--accent);outline:none}
+.st img{width:72px;height:72px;border-radius:16px;object-fit:cover;border:2px solid var(--accent);background:var(--bg);flex:none}
+.st .n{font-family:"Anton",Impact,sans-serif;font-size:38px;text-transform:uppercase;line-height:1}
+.st .go{margin-left:auto;font-size:26px;color:var(--accent)}
+.muted{color:var(--muted)}.err{color:var(--danger);font-size:14px}
+</style>
+</head><body>
+<div class="wrap" id="app"><div class="muted">Cargando…</div></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.min.js"></script>
+<script src="../config.js"></script>
+<script>
+const C=window.SB_CONFIG;
+const sb=supabase.createClient(C.url,C.key,{auth:{persistSession:true,autoRefreshToken:true,storageKey:'entreno-session'}});
+const STUDENTS=[{app:'alex',name:'Alex',img:'../alex/img/tiburon.jpg'},{app:'juanma',name:'Juanma',img:'../juanma/img/juanma.png'}];
+const $=id=>document.getElementById(id);
+const head=`<div class="crest"><img src="img/pino.png" alt="Escudo del Pino F.S."><div><div class="stars">★★★</div><div class="club">Pino F.S.</div><div class="label">Preparación física</div></div></div>`;
+function login(msg){
+  $('app').innerHTML=head+`<h1>Entreno<br>Adri</h1><img class="lema" src="img/himno-lema.jpg" alt="Jugamos con el alma">
+  <div class="card"><div class="label">Acceso del entrenador</div><span class="muted">Escribe tu contraseña. Solo hay que hacerlo una vez en cada dispositivo.</span>
+  <input class="input" id="pw" type="password" autocomplete="current-password" placeholder="Contraseña" aria-label="Contraseña">
+  <button class="btn" id="go">Entrar</button>${msg?`<span class="err">${msg}</span>`:''}</div>`;
+  const go=async()=>{const pw=$('pw').value;if(!pw)return;$('go').disabled=true;$('go').textContent='Entrando…';
+    const {error}=await sb.auth.signInWithPassword({email:'adri@entreno.app',password:pw});
+    if(error)return login('Contraseña incorrecta.');picker()};
+  $('go').onclick=go;$('pw').onkeydown=e=>{if(e.key==='Enter')go()};$('pw').focus();
+}
+async function avatar(app){
+  try{const {data}=await sb.from('docs').select('data').eq('app',app).eq('path','library/profile').maybeSingle();
+    const id=data&&data.data&&data.data.alumno;if(!id)return null;
+    const {data:u}=await sb.storage.from('media').createSignedUrl(app+'/'+id,3600);return u&&u.signedUrl}catch(e){return null}
+}
+function picker(){
+  $('app').innerHTML=head+`<h1>¿A quién<br>entrenas hoy?</h1>
+  ${STUDENTS.map(s=>`<a class="st" href="../${s.app}/"><img id="av-${s.app}" src="${s.img}" alt=""><div><div class="label">Alumno</div><div class="n">${s.name}</div></div><span class="go" aria-hidden="true">›</span></a>`).join('')}
+  <button class="ghost" id="out">Cerrar sesión en este dispositivo</button>`;
+  $('out').onclick=async()=>{await sb.auth.signOut();login()};
+  STUDENTS.forEach(async s=>{const u=await avatar(s.app);if(u)$('av-'+s.app).src=u});
+}
+(async()=>{
+  const {data}=await sb.auth.getSession();
+  const em=(data&&data.session&&data.session.user.email||'').toLowerCase();
+  if(em.startsWith('adri@'))picker();
+  else{if(data&&data.session)await sb.auth.signOut();login()}
+})();
+</script>
+</body></html>

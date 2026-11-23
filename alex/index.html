@@ -490,7 +490,7 @@ function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t
 
 /* ---------- state ---------- */
 const state={
-  role:ls.get('ea_role_alex')||null, auth:'checking', tgRoles:null, docs:{}, exists:{}, weeks:{}, ready:false, assets:null,
+  role:null, coach:false, auth:'checking', tgRoles:null, docs:{}, exists:{}, weeks:{}, ready:false, assets:null,
   weekId:null, tab:'entreno', gymDay:todayIdx<5?todayIdx:0, foodDay:todayIdx,
   modal:null, confirm:null, extraCat:'Alcohol', extraText:'', extraTime:'',
   exForm:{name:'',group:'Pecho',work:'',editId:null}, libSearch:'', maxSearch:'', newGroup:'', newWork:'',
@@ -499,7 +499,7 @@ const state={
 
 /* ---------- store: Supabase (datos, fotos y cambios en directo) ---------- */
 const CFG=Object.assign({},window.SB_CONFIG||{},window.APP_CFG||{});
-const sb=(window.supabase&&CFG.url&&CFG.key)?window.supabase.createClient(CFG.url,CFG.key,{auth:{persistSession:true,autoRefreshToken:true,storageKey:'entreno-'+CFG.app}}):null;
+const sb=(window.supabase&&CFG.url&&CFG.key)?window.supabase.createClient(CFG.url,CFG.key,{auth:{persistSession:true,autoRefreshToken:true,storageKey:'entreno-session'}}):null;
 const randHex=()=>[...crypto.getRandomValues(new Uint8Array(16))].map(b=>b.toString(16).padStart(2,'0')).join('');
 const URLS={};const signQ=new Set();let signT=null;
 const BLANK='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
@@ -532,6 +532,10 @@ const Store={
     if(!sb){state.auth='config';render();return}
     const {data}=await sb.auth.getSession();
     if(!data||!data.session){state.auth='out';render();return}
+    const em=((data.session.user||{}).email||'').toLowerCase();
+    if(em.startsWith('adri@')){state.coach=true;state.role='admin'}
+    else if(em===CFG.email){state.coach=false;state.role='alumno'}
+    else{await sb.auth.signOut();state.auth='out';state.wrongAcc=true;render();return}
     state.auth='in';this.mode='db';render();
     await this.load();this.sub();
   },
@@ -577,7 +581,7 @@ const lastNote={};
 function notify(to,text,key){
   if(!sb||state.auth!=='in'||!state.role||to===state.role)return;
   key=key||text;if(lastNote[key]&&Date.now()-lastNote[key]<10*60e3)return;lastNote[key]=Date.now();
-  sb.functions.invoke('notify',{body:{to,text}}).catch(()=>{});
+  sb.functions.invoke('notify',{body:{to,text,app:CFG.app}}).catch(()=>{});
 }
 function hookClick(a,b){
   const w=curWeek();if(!w)return;const ST=CFG.student;
@@ -601,13 +605,20 @@ function hookClick(a,b){
     if(a==='review-read')notify('admin',`👀 ${ST} ha leído tu valoración de la Semana ${N}.`,'read-'+N);
   }
 }
+const tgApp=()=>state.coach?'adri':CFG.app;
 async function tgKey(){
+  if(state.coach){
+    const {data}=await sb.from('docs').select('data').eq('app','adri').eq('path','library/tg').maybeSingle();
+    let k=data&&data.data&&data.data.key;
+    if(!k){k=randHex().slice(0,20);await sb.rpc('set_doc',{p_app:'adri',p_path:'library/tg',p_data:{key:k}})}
+    return k;
+  }
   let k=(state.docs['library/tg']||{}).key;
   if(!k){k=randHex().slice(0,20);await Store.set('library/tg',{key:k})}
   return k;
 }
 async function tgStatus(){
-  const {data}=await sb.from('tg_chats').select('role').eq('app',CFG.app);
+  const {data}=await sb.from('tg_chats').select('role').in('app',[tgApp()]);
   state.tgRoles=[...new Set((data||[]).map(r=>r.role))];render();
 }
 
@@ -819,6 +830,11 @@ function weightCard(){
 /* ---------- novedades: añadir una entrada nueva arriba cada vez que se cambie la app ---------- */
 const CHANGELOG=[
   {v:'2026-11-23',title:'Novedades',items:[
+    'La app se ha mudado fuera de Claude: ahora se instala como app propia, con su icono, en el móvil y en el PC. Todos los datos, fotos y vídeos se han copiado.',
+    'Avisos por Telegram: pulsa la campana 🔔 de arriba y «Conectar Telegram» para recibir avisos en el móvil.',
+    'El entrenador tiene ahora su propia app y cuenta: desde ahí elige a qué alumno entrena. El alumno entra directo a su app.'
+  ]},
+  {v:'2026-11-23',title:'Novedades',items:[
     'Ejercicios sin peso: el entrenador puede tocar el icono de la pesa de un ejercicio para marcarlo como «solo repeticiones» (ej. rueda abdominal). Así no aparece la columna de peso ni el «Peso usado».',
     'Se marca también en la biblioteca de ejercicios, para que el ejercicio salga siempre sin peso cuando se use.'
   ]},
@@ -926,7 +942,9 @@ function loginScreen(){
       <span class="muted">Escribe la contraseña de la app. Solo hay que hacerlo una vez en cada dispositivo.</span>
       <div class="field"><label class="label" for="lg-pass">Contraseña</label><input class="input" id="lg-pass" type="password" autocomplete="current-password" placeholder="Contraseña"></div>
       <button class="btn primary block" data-act="login" ${state.logging?'disabled':''}>${state.logging?'Entrando…':'Entrar'}</button>
+      ${state.wrongAcc?'<span class="muted" style="font-size:13px">Esta no es la cuenta de esta app. Entra con su contraseña.</span>':''}
     </div>
+    <a class="btn ghost small" href="../adri/" style="align-self:flex-start;text-decoration:none">¿Eres el entrenador? Entra aquí</a>
   </div></div>`;
 }
 function roleScreen(){
@@ -935,10 +953,9 @@ function roleScreen(){
     <h1 class="splash-title">Entreno<br>Alex <span>&amp;</span> Adri</h1>
     <img class="lema" src="img/himno-lema.jpg" alt="Jugamos con el alma">
     ${goalHTML()}
-    <p class="lead">Elige quién eres para entrar.</p>
+    <p class="lead">Pulsa tu tarjeta para entrar.</p>
     <div class="roles">
       <button class="role-card" data-act="role" data-role="alumno"><img class="av" src="${avSrc('alumno')}" alt=""><span class="tx"><span class="tag tag-blue">Alumno</span><span class="name">Alex</span><span class="muted">Mis entrenos, mis comidas y mis máximos.</span></span></button>
-      <button class="role-card" data-act="role" data-role="admin"><img class="av" src="${avSrc('admin')}" alt=""><span class="tx"><span class="tag tag-red">Entrenador</span><span class="name">Adri</span><span class="muted">Sesiones, entrenos y la valoración de cada semana.</span></span></button>
     </div>
     <button class="btn ghost small" data-act="logout" style="align-self:flex-start">Cerrar sesión en este dispositivo</button>
   </div></div>`;
@@ -955,7 +972,7 @@ function shell(){
   const noWeekTab=['sesiones','ejercicios','maximos'].includes(state.tab);
   return `<header class="top"><div class="wrap">
     <div class="top-row">
-      <div class="whobox"><button class="who" data-act="switch-role" title="Cambiar de usuario"><img src="${avSrc(admin?'admin':'alumno')}" alt=""><span class="r"><small>${admin?'Entrenador':'Alumno'}</small>${admin?'Adri':'Alex'}</span></button>${state.assets?`<button class="iconbtn avbtn" data-act="avatar-change" title="Cambiar mi foto" aria-label="Cambiar mi foto de perfil" ${state.uploading?'disabled':''}>${state.uploading==='avatar'?'…':IC.cam}</button>`:''}<button class="iconbtn avbtn" data-act="tg-open" title="Avisos por Telegram" aria-label="Avisos por Telegram">${IC.bell}</button></div>
+      <div class="whobox"><button class="who" data-act="switch-role" title="Cambiar de usuario"><img src="${avSrc(admin?'admin':'alumno')}" alt=""><span class="r"><small>${admin?'Entrenador':'Alumno'}</small>${admin?'Adri · Alex':'Alex'}</span></button>${state.assets?`<button class="iconbtn avbtn" data-act="avatar-change" title="Cambiar mi foto" aria-label="Cambiar mi foto de perfil" ${state.uploading?'disabled':''}>${state.uploading==='avatar'?'…':IC.cam}</button>`:''}<button class="iconbtn avbtn" data-act="tg-open" title="Avisos por Telegram" aria-label="Avisos por Telegram">${IC.bell}</button></div>
       ${l.length&&!noWeekTab?`<div class="weeknav">
         <button class="iconbtn" data-act="week-prev" aria-label="Semana anterior" ${idx<=0?'disabled':''}>‹</button>
         <div class="wk"><b>Semana ${w?w.num:''}</b><span class="pill ${st}">${statusLabel[st]||''}</span></div>
@@ -1599,13 +1616,13 @@ document.addEventListener('click',ev=>{
       state.logging=true;render();
       sb.auth.signInWithPassword({email:CFG.email,password:pw}).then(({error})=>{state.logging=false;
         if(error){toast('Contraseña incorrecta.');render();return}Store.init()});return}
-    case'logout':sb.auth.signOut().then(()=>{state.auth='out';state.ready=false;render()});return;
+    case'logout':sb.auth.signOut().then(()=>{state.auth='out';state.ready=false;state.role=null;render()});return;
     case'tg-open':state.modal={kind:'tg'};state.tgRoles=null;tgStatus();break;
-    case'tg-link':tgKey().then(k=>{state.modal={kind:'tg',link:`https://t.me/${CFG.bot}?start=${CFG.app}_${state.role}_${k}`};render()});return;
+    case'tg-link':tgKey().then(k=>{state.modal={kind:'tg',link:`https://t.me/${CFG.bot}?start=${tgApp()}_${state.role}_${k}`};render()});return;
     case'tg-check':state.tgRoles=null;tgStatus();break;
-    case'tg-test':sb.functions.invoke('notify',{body:{to:state.role,text:'🔔 Prueba: los avisos de la app funcionan.'}}).then(()=>toast('Prueba enviada. Mira tu Telegram.')).catch(()=>toast('No se pudo enviar la prueba.'));return;
-    case'role':state.role=b.dataset.role;ls.set('ea_role_alex',state.role);state.tab='entreno';break;
-    case'switch-role':state.role=null;state.modal=null;state.editSess=null;ls.set('ea_role_alex','');break;
+    case'tg-test':sb.functions.invoke('notify',{body:{to:state.role,app:CFG.app,text:'🔔 Prueba: los avisos de la app funcionan.'}}).then(()=>toast('Prueba enviada. Mira tu Telegram.')).catch(()=>toast('No se pudo enviar la prueba.'));return;
+    case'role':state.role='alumno';state.tab='entreno';break;
+    case'switch-role':if(state.coach){location.href='../adri/';return}state.role=null;state.modal=null;state.editSess=null;break;
     case'tab':state.tab=b.dataset.tab;window.scrollTo(0,0);break;
     case'week-prev':case'week-next':{const l=weekList();const i=l.findIndex(x=>x.id===state.weekId)+(a==='week-prev'?-1:1);if(l[i]){state.weekId=l[i].id;syncDays()}break}
     case'go-close':state.weekId=b.dataset.id;state.tab='semana';state.editReview=false;syncDays();window.scrollTo(0,0);break;
