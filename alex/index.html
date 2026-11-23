@@ -616,21 +616,21 @@ const mealQ={};
 function sendMeal(key){
   const q=mealQ[key];if(!q)return;clearTimeout(q.t);delete mealQ[key];
   const w=weekList().find(x=>x.num===q.N);if(!w)return;const e=(dayMeals(w,q.k)[q.mk])||{};
-  if(!e.food&&!e.drink)return;
-  const parts=[e.food?`🍽️ ${e.food}`:'',e.drink?`🥤 ${e.drink}`:''].filter(Boolean).join(' · ');
-  notify('admin',`${CFG.student} ha apuntado ${MEAL_N[q.mk]} del ${dayName(q.k)}: ${parts}`,'meal-'+key+'|'+(e.food||'')+'|'+(e.drink||''));
+  if(!e.food&&!e.drink&&!e.noDrink)return;
+  const parts=[e.food?`🍽️ ${e.food}`:'',e.noDrink?'🥤 sin bebida':(e.drink?`🥤 ${e.drink}`:'')].filter(Boolean).join(' · ');
+  notify('admin',`${CFG.student} ha apuntado ${MEAL_N[q.mk]} del ${dayName(q.k)}: ${parts}`,'meal-'+key+'|'+(e.food||'')+'|'+(e.noDrink?'-':(e.drink||'')));
 }
 function queueMeal(N,k,mk){
   const key=N+k+mk;const q=mealQ[key]||(mealQ[key]={N,k,mk});clearTimeout(q.t);
   setTimeout(()=>{const w=weekList().find(x=>x.num===N);const e=w?((dayMeals(w,k)[mk])||{}):{};
-    q.t=setTimeout(()=>sendMeal(key),(e.food&&e.drink)?1500:60000)},0);
+    q.t=setTimeout(()=>sendMeal(key),(e.food&&(e.drink||e.noDrink))?1500:60000)},0);
 }
 document.addEventListener('visibilitychange',()=>{if(document.hidden)Object.keys(mealQ).forEach(sendMeal)});
 window.addEventListener('pagehide',()=>Object.keys(mealQ).forEach(sendMeal));
 function hookChange(f,el){
   if(state.role!=='alumno')return;const w=curWeek();if(!w)return;const ST=CFG.student;const k=DAYS[state.foodDay].k;const dn=dayName(k);const N=w.num;
   const v=(el.value||'').trim();const mk=el.dataset.meal;
-  if((f==='meal-food'||f==='meal-drink')&&v)queueMeal(N,k,mk);
+  if(((f==='meal-food'||f==='meal-drink')&&v)||(f==='meal-nodrink'&&el.checked))queueMeal(N,k,mk);
   if(f==='meal-dessert'&&el.checked)notify('admin',`🍰 ${ST} ha tomado postre en ${MEAL_N[mk]} del ${dn}.`,'ds-'+N+k+mk);
   if(f==='meal-dessert-text'&&v)notify('admin',`🍰 ${ST}, postre en ${MEAL_N[mk]} del ${dn}: ${v}.`,'dt-'+N+k+mk+v);
   if(f==='meal-left'&&el.checked){const e=(dayMeals(w,k)[mk])||{};notify('admin',`♻️ ${ST}: ${MEAL_N[mk]} del ${dn} son sobras${e.food?' ('+e.food+')':''}.`,'lo-'+N+k+mk)}
@@ -858,6 +858,9 @@ function weightCard(){
 }
 /* ---------- novedades: añadir una entrada nueva arriba cada vez que se cambie la app ---------- */
 const CHANGELOG=[
+  {v:'2026-11-23c',title:'Novedades',items:[
+    'En el desayuno y la merienda puedes marcar «No he bebido nada». El entrenador lo verá como «Bebida: Nada».'
+  ]},
   {v:'2026-11-23b',title:'Novedades',items:[
     'Avisos de comidas para el entrenador: le llega un Telegram cuando el alumno apunta una comida y su bebida (en un solo aviso), marca que no ha comido, toma postre, marca sobras, sube una foto de una comida o apunta un extra (cervezas, chuches…).',
     'Arreglado: el comparador de fotos «antes / después» ya deja cambiar las semanas.'
@@ -1278,7 +1281,7 @@ function mealHTML(dk,x,e,admin){
   if(admin){
     let body;
     if(skipped)body=`<span class="badge-no statusline">No comió</span>`;
-    else if(e.food||e.drink||e.dessert||photos.length)body=`<dl class="readval"><dt>Comida</dt><dd>${esc(e.food||'—')}${e.leftover&&leftoverSrc(dk,x.k,e.food)?` <span class="lotag">Sobras del ${esc(leftoverSrc(dk,x.k,e.food))}</span>`:''}</dd><dt>Bebida</dt><dd>${esc(e.drink||'—')}</dd>${x.k==='almuerzo'||x.k==='cena'?`<dt>Postre</dt><dd>${e.dessert?esc(e.dessertText||'Sí'):'No'}</dd>`:''}</dl>${photos.length?photosHTML(photos,false,'',''):''}`;
+    else if(e.food||e.drink||e.dessert||photos.length)body=`<dl class="readval"><dt>Comida</dt><dd>${esc(e.food||'—')}${e.leftover&&leftoverSrc(dk,x.k,e.food)?` <span class="lotag">Sobras del ${esc(leftoverSrc(dk,x.k,e.food))}</span>`:''}</dd><dt>Bebida</dt><dd>${e.noDrink?'Nada':esc(e.drink||'—')}</dd>${x.k==='almuerzo'||x.k==='cena'?`<dt>Postre</dt><dd>${e.dessert?esc(e.dessertText||'Sí'):'No'}</dd>`:''}</dl>${photos.length?photosHTML(photos,false,'',''):''}`;
     else body=`<span class="muted">Sin apuntar</span>`;
     return `<div class="meal ${skipped?'skipped':''}"><div class="meal-head"><h3>${x.n}</h3></div>${body}</div>`;
   }
@@ -1291,8 +1294,9 @@ function mealHTML(dk,x,e,admin){
     <div class="field"><label class="label" for="${fid}">Comida</label>
       <input class="input" id="${fid}" data-f="meal-food" data-meal="${x.k}" data-sug="foods" value="${esc(e.food||'')}" placeholder="Ej: Tostadas con tomate y pavo" autocomplete="off"><div class="sugs" id="sug-${fid}"></div>
       ${(()=>{const src=leftoverSrc(dk,x.k,e.food);return src?`<label class="lefto" for="lo-${dk}-${x.k}"><input type="checkbox" id="lo-${dk}-${x.k}" data-f="meal-left" data-meal="${x.k}" ${e.leftover?'checked':''}><span>Son sobras del ${esc(src)}</span></label>`:''})()}</div>
-    <div class="field"><label class="label" for="${did}">Bebida</label>
-      <input class="input" id="${did}" data-f="meal-drink" data-meal="${x.k}" data-sug="drinks" value="${esc(e.drink||'')}" placeholder="Ej: Café con leche, agua" autocomplete="off"><div class="sugs" id="sug-${did}"></div></div>
+    ${e.noDrink?'':`<div class="field"><label class="label" for="${did}">Bebida</label>
+      <input class="input" id="${did}" data-f="meal-drink" data-meal="${x.k}" data-sug="drinks" value="${esc(e.drink||'')}" placeholder="Ej: Café con leche, agua" autocomplete="off"><div class="sugs" id="sug-${did}"></div></div>`}
+    ${x.k==='desayuno'||x.k==='merienda'?`<label class="lefto" for="nd-${dk}-${x.k}"><input type="checkbox" id="nd-${dk}-${x.k}" data-f="meal-nodrink" data-meal="${x.k}" ${e.noDrink?'checked':''}><span>No he bebido nada</span></label>`:''}
     ${x.k==='almuerzo'||x.k==='cena'?`<label class="lefto" for="ds-${dk}-${x.k}"><input type="checkbox" id="ds-${dk}-${x.k}" data-f="meal-dessert" data-meal="${x.k}" ${e.dessert?'checked':''}><span>He tomado postre</span></label>
       ${e.dessert?`<div class="field"><label class="label" for="dt-${dk}-${x.k}">¿Qué postre?</label><input class="input" id="dt-${dk}-${x.k}" data-f="meal-dessert-text" data-meal="${x.k}" data-sug="desserts" value="${esc(e.dessertText||'')}" placeholder="Ej: Natillas, fruta, helado…" autocomplete="off"><div class="sugs" id="sug-dt-${dk}-${x.k}"></div></div>`:''}`:''}
     ${state.assets||photos.length?photosHTML(photos,!!state.assets,`data-kind="photo" data-meal="${x.k}"`,state.assets?`data-act="up-photo" data-meal="${x.k}" data-key="${upKey}"`:''):''}`}
@@ -1775,6 +1779,7 @@ document.addEventListener('change',ev=>{
     case'xa-h':case'xa-m':break;
     case'meal-dessert':patchWeek({meals:{[fk]:{[el.dataset.meal]:{dessert:el.checked,status:'comi'}}}});break;
     case'meal-dessert-text':patchWeek({meals:{[fk]:{[el.dataset.meal]:{dessertText:v.trim()}}}});remember('desserts',v);break;
+    case'meal-nodrink':patchWeek({meals:{[fk]:{[el.dataset.meal]:el.checked?{noDrink:true,drink:'',status:'comi'}:{noDrink:false}}}});break;
     case'meal-left':patchWeek({meals:{[fk]:{[el.dataset.meal]:{leftover:el.checked}}}});break;
     case'meal-food':case'meal-drink':{const key=f==='meal-food'?'food':'drink';
       patchWeek({meals:{[fk]:{[el.dataset.meal]:{[key]:v.trim(),status:'comi'}}}});remember(key==='food'?'foods':'drinks',v);break}
