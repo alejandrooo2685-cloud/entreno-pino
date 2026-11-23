@@ -611,11 +611,26 @@ function hookClick(a,b){
 }
 const tgApp=()=>state.coach?'adri':CFG.app;
 const MEAL_N={desayuno:'el desayuno',almuerzo:'la comida',merienda:'la merienda',cena:'la cena'};
+/* comida y bebida de la misma comida → un solo aviso */
+const mealQ={};
+function sendMeal(key){
+  const q=mealQ[key];if(!q)return;clearTimeout(q.t);delete mealQ[key];
+  const w=weekList().find(x=>x.num===q.N);if(!w)return;const e=(dayMeals(w,q.k)[q.mk])||{};
+  if(!e.food&&!e.drink)return;
+  const parts=[e.food?`🍽️ ${e.food}`:'',e.drink?`🥤 ${e.drink}`:''].filter(Boolean).join(' · ');
+  notify('admin',`${CFG.student} ha apuntado ${MEAL_N[q.mk]} del ${dayName(q.k)}: ${parts}`,'meal-'+key+'|'+(e.food||'')+'|'+(e.drink||''));
+}
+function queueMeal(N,k,mk){
+  const key=N+k+mk;const q=mealQ[key]||(mealQ[key]={N,k,mk});clearTimeout(q.t);
+  setTimeout(()=>{const w=weekList().find(x=>x.num===N);const e=w?((dayMeals(w,k)[mk])||{}):{};
+    q.t=setTimeout(()=>sendMeal(key),(e.food&&e.drink)?1500:60000)},0);
+}
+document.addEventListener('visibilitychange',()=>{if(document.hidden)Object.keys(mealQ).forEach(sendMeal)});
+window.addEventListener('pagehide',()=>Object.keys(mealQ).forEach(sendMeal));
 function hookChange(f,el){
   if(state.role!=='alumno')return;const w=curWeek();if(!w)return;const ST=CFG.student;const k=DAYS[state.foodDay].k;const dn=dayName(k);const N=w.num;
   const v=(el.value||'').trim();const mk=el.dataset.meal;
-  if(f==='meal-food'&&v)notify('admin',`🍽️ ${ST} ha apuntado ${MEAL_N[mk]} del ${dn}: ${v}.`,'mf-'+N+k+mk+v);
-  if(f==='meal-drink'&&v)notify('admin',`🥤 ${ST}, bebida en ${MEAL_N[mk]} del ${dn}: ${v}.`,'md-'+N+k+mk+v);
+  if((f==='meal-food'||f==='meal-drink')&&v)queueMeal(N,k,mk);
   if(f==='meal-dessert'&&el.checked)notify('admin',`🍰 ${ST} ha tomado postre en ${MEAL_N[mk]} del ${dn}.`,'ds-'+N+k+mk);
   if(f==='meal-dessert-text'&&v)notify('admin',`🍰 ${ST}, postre en ${MEAL_N[mk]} del ${dn}: ${v}.`,'dt-'+N+k+mk+v);
   if(f==='meal-left'&&el.checked){const e=(dayMeals(w,k)[mk])||{};notify('admin',`♻️ ${ST}: ${MEAL_N[mk]} del ${dn} son sobras${e.food?' ('+e.food+')':''}.`,'lo-'+N+k+mk)}
@@ -844,7 +859,7 @@ function weightCard(){
 /* ---------- novedades: añadir una entrada nueva arriba cada vez que se cambie la app ---------- */
 const CHANGELOG=[
   {v:'2026-11-23b',title:'Novedades',items:[
-    'Avisos de comidas para el entrenador: le llega un Telegram cuando el alumno apunta una comida o bebida, marca que no ha comido, toma postre, marca sobras, sube una foto de una comida o apunta un extra (cervezas, chuches…).',
+    'Avisos de comidas para el entrenador: le llega un Telegram cuando el alumno apunta una comida y su bebida (en un solo aviso), marca que no ha comido, toma postre, marca sobras, sube una foto de una comida o apunta un extra (cervezas, chuches…).',
     'Arreglado: el comparador de fotos «antes / después» ya deja cambiar las semanas.'
   ]},
   {v:'2026-11-23',title:'Novedades',items:[
