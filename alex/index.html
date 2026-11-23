@@ -602,10 +602,24 @@ function hookClick(a,b){
       else notify('admin',`❌ ${ST} no ha podido ir el ${dn(gk)}.`,'st-'+N+gk)}}
     if(a==='weigh-save'){const kg=num(document.getElementById('wi-'+b.dataset.day)?.value);if(kg)notify('admin',`⚖️ ${ST} se ha pesado: ${fmtKg(kg)}.`,'w-'+N+b.dataset.day)}
     if(a==='xa-add'){const k=state.xa.kind==='Otro'?(document.getElementById('xa-other')?.value||'otra actividad'):state.xa.kind;notify('admin',`➕ ${ST} ha apuntado actividad extra el ${dn(gk)}: ${k}.`)}
+    if(a==='meal-status'&&b.dataset.v==='no'){const k=DAYS[state.foodDay].k;const e=(dayMeals(w,k)[b.dataset.meal])||{};
+      if(e.status!=='no')notify('admin',`🚫 ${ST} no ha tomado ${MEAL_N[b.dataset.meal]} del ${dayName(k)}.`,'mn-'+N+k+b.dataset.meal)}
+    if(a==='extra-add'){const t=(document.getElementById('extra-text')?.value||'').trim();const k=DAYS[state.foodDay].k;
+      const tm=document.getElementById('extra-time')?.value||'';if(t)notify('admin',`🍺 ${ST} ha apuntado un extra el ${dayName(k)}${tm?' a las '+tm:''}: ${t} (${state.extraCat}).`,'ex-'+N+k+t+tm)}
     if(a==='review-read')notify('admin',`👀 ${ST} ha leído tu valoración de la Semana ${N}.`,'read-'+N);
   }
 }
 const tgApp=()=>state.coach?'adri':CFG.app;
+const MEAL_N={desayuno:'el desayuno',almuerzo:'la comida',merienda:'la merienda',cena:'la cena'};
+function hookChange(f,el){
+  if(state.role!=='alumno')return;const w=curWeek();if(!w)return;const ST=CFG.student;const k=DAYS[state.foodDay].k;const dn=dayName(k);const N=w.num;
+  const v=(el.value||'').trim();const mk=el.dataset.meal;
+  if(f==='meal-food'&&v)notify('admin',`🍽️ ${ST} ha apuntado ${MEAL_N[mk]} del ${dn}: ${v}.`,'mf-'+N+k+mk+v);
+  if(f==='meal-drink'&&v)notify('admin',`🥤 ${ST}, bebida en ${MEAL_N[mk]} del ${dn}: ${v}.`,'md-'+N+k+mk+v);
+  if(f==='meal-dessert'&&el.checked)notify('admin',`🍰 ${ST} ha tomado postre en ${MEAL_N[mk]} del ${dn}.`,'ds-'+N+k+mk);
+  if(f==='meal-dessert-text'&&v)notify('admin',`🍰 ${ST}, postre en ${MEAL_N[mk]} del ${dn}: ${v}.`,'dt-'+N+k+mk+v);
+  if(f==='meal-left'&&el.checked){const e=(dayMeals(w,k)[mk])||{};notify('admin',`♻️ ${ST}: ${MEAL_N[mk]} del ${dn} son sobras${e.food?' ('+e.food+')':''}.`,'lo-'+N+k+mk)}
+}
 async function tgKey(){
   if(state.coach){
     const {data}=await sb.from('docs').select('data').eq('app','adri').eq('path','library/tg').maybeSingle();
@@ -829,6 +843,10 @@ function weightCard(){
 }
 /* ---------- novedades: añadir una entrada nueva arriba cada vez que se cambie la app ---------- */
 const CHANGELOG=[
+  {v:'2026-11-23b',title:'Novedades',items:[
+    'Avisos de comidas para el entrenador: le llega un Telegram cuando el alumno apunta una comida o bebida, marca que no ha comido, toma postre, marca sobras, sube una foto de una comida o apunta un extra (cervezas, chuches…).',
+    'Arreglado: el comparador de fotos «antes / después» ya deja cambiar las semanas.'
+  ]},
   {v:'2026-11-23',title:'Novedades',items:[
     'La app se ha mudado fuera de Claude: ahora se instala como app propia, con su icono, en el móvil y en el PC. Todos los datos, fotos y vídeos se han copiado.',
     'Avisos por Telegram: pulsa la campana 🔔 de arriba y «Conectar Telegram» para recibir avisos en el móvil.',
@@ -1553,7 +1571,7 @@ async function handleUpload(file,p){
       if(!e){e={id:uid(),week:p.weekNum,day:p.day,at:Date.now(),analysis:''};list.push(e)}const old=e[p.slot];e[p.slot]=r.id;e.at=Date.now();
       await saveBody({entries:list});if(old&&old!==r.id)A.delete(old).catch(()=>{});toast('Foto subida');notify('admin',`📸 ${CFG.student} ha subido una foto de físico.`,'body-'+p.weekNum+p.day)}
     else if(p.kind==='avatar'){const old=(state.docs['library/profile']||{})[p.role];await Store.update('library/profile',{[p.role]:r.id});if(old&&old!==r.id)A.delete(old).catch(()=>{});toast('Foto de perfil cambiada')}
-    else if(p.kind==='photo'){const cur=((dayMeals(w,p.day)[p.meal])||{}).photos||[];await Store.update('weeks/'+p.week,{meals:{[p.day]:{[p.meal]:{photos:[...cur,item],status:'comi'}}}});toast('Foto subida')}
+    else if(p.kind==='photo'){const cur=((dayMeals(w,p.day)[p.meal])||{}).photos||[];await Store.update('weeks/'+p.week,{meals:{[p.day]:{[p.meal]:{photos:[...cur,item],status:'comi'}}}});toast('Foto subida');notify('admin',`📷 ${CFG.student} ha subido una foto de ${MEAL_N[p.meal]} del ${dayName(p.day)}.`,'mp-'+p.week+p.day+p.meal)}
     else{const cur=((dayProg(w,p.day).videos)||{})[p.uid]||[];await Store.update('weeks/'+p.week,{progress:{[p.day]:{videos:{[p.uid]:[...cur,item]}}}});toast('Vídeo subido')}
   }catch(e){toast(uploadErr(e,file))}
   state.uploading=null;render();
@@ -1710,8 +1728,9 @@ document.addEventListener('click',ev=>{
 
 document.addEventListener('change',ev=>{
   const el=ev.target;if(el.id==='xa-h')state.xa.h=+el.value;if(el.id==='xa-m')state.xa.m=+el.value;const f=el.dataset&&el.dataset.f;if(!f)return;
+  try{hookChange(f,el)}catch(e){}
   if(f==='rv'){keepRv(el);return}
-  if(f==='cmp-a'||f==='cmp-b'){state.cmp[f==='cmp-a'?'a':'b']=v;render();return}const v=el.value;
+  if(f==='cmp-a'||f==='cmp-b'){state.cmp[f==='cmp-a'?'a':'b']=el.value;render();return}const v=el.value;
   const gk=DAYS[state.gymDay].k, fk=DAYS[state.foodDay].k;const ctx=el.dataset.ctx;
   switch(f){
     case'day-title':patchWeek({days:{[gk]:{title:v.trim()}}});break;
