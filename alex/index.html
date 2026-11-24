@@ -468,7 +468,7 @@ const DEFAULT_WORKS=['Fuerza','Potencia','Hipertrofia','Resistencia','Técnica',
 const EXTRA_CATS=['Alcohol','Bebida energética','Dulces / chuches','Comida rápida','Snack','Otro'];
 const SPORTS=['Pádel','Fútbol','Otro'];
 const RATINGS=['','1','2','3','4','5','6','7','8','9','10'];
-const DOCS=['library/tg','library/main','library/sessions','library/maxes','library/weight','library/profile','library/body','library/seen'];
+const DOCS=['@shared/library/exercises','library/tg','library/main','library/sessions','library/maxes','library/weight','library/profile','library/body','library/seen'];
 const DEF_AV={alumno:'img/tiburon.jpg',admin:'img/pino.png'};
 const avSrc=r=>{const id=(state.docs&&state.docs['library/profile']||{})[r];return id?mediaUrl(id):DEF_AV[r]};
 const MAX_VIDEO=20*1024*1024;
@@ -525,6 +525,7 @@ const AssetShim={
   },
   async delete(id){try{await sb.storage.from('media').remove([CFG.app+'/'+id])}catch(e){}}
 };
+const dest=path=>path.startsWith('@shared/')?{p_app:'shared',p_path:path.slice(8)}:{p_app:CFG.app,p_path:path};
 const Store={
   mode:'loading', q:{}, wasDown:false, subbed:false,
   async init(){
@@ -544,9 +545,9 @@ const Store={
     else{state.docs[path]=d;state.exists[path]=true;state.loaded[path]=true}
   },
   async load(){
-    const {data,error}=await sb.from('docs').select('path,data').eq('app',CFG.app);
+    const {data,error}=await sb.from('docs').select('app,path,data').in('app',[CFG.app,'shared']);
     if(error){this.fail();return}
-    const w={};(data||[]).forEach(r=>this.apply(r.path,r.data,w));
+    const w={};(data||[]).forEach(r=>this.apply(r.app==='shared'?'@shared/'+r.path:r.path,r.data,w));
     DOCS.forEach(p=>{state.loaded[p]=true;if(!(p in state.docs)){state.docs[p]=null;state.exists[p]=false}});
     state.weeks=w;state.ready=true;onData();
   },
@@ -555,6 +556,8 @@ const Store={
     sb.channel('docs-'+CFG.app)
       .on('postgres_changes',{event:'*',schema:'public',table:'docs',filter:'app=eq.'+CFG.app},pl=>{
         const r=pl.new;if(r&&r.path){this.apply(r.path,r.data);onData()}})
+      .on('postgres_changes',{event:'*',schema:'public',table:'docs',filter:'app=eq.shared'},pl=>{
+        const r=pl.new;if(r&&r.path){this.apply('@shared/'+r.path,r.data);onData()}})
       .subscribe(st=>{
         if(st==='SUBSCRIBED'&&this.wasDown){this.wasDown=false;this.load()}
         if(st==='CHANNEL_ERROR'||st==='TIMED_OUT'||st==='CLOSED')this.wasDown=true;
@@ -567,12 +570,12 @@ const Store={
       else toast('No se pudo guardar. Revisa tu conexión e inténtalo de nuevo.');});this.q[key]=p;return p},
   set(path,data){
     state.exists[path]=true;this.apply(path,clone(data));onData();
-    return this.enqueue(path,async()=>{const {error}=await sb.rpc('set_doc',{p_app:CFG.app,p_path:path,p_data:data});if(error)throw error});
+    return this.enqueue(path,async()=>{const {error}=await sb.rpc('set_doc',{...dest(path),p_data:data});if(error)throw error});
   },
   update(path,patch){
     const cur=path.startsWith('weeks/')?state.weeks[path.slice(6)]:state.docs[path];
     this.apply(path,deepMerge(clone(cur)||{},clone(patch)));onData();
-    return this.enqueue(path,async()=>{const {error}=await sb.rpc('merge_doc',{p_app:CFG.app,p_path:path,p_patch:patch});if(error)throw error});
+    return this.enqueue(path,async()=>{const {error}=await sb.rpc('merge_doc',{...dest(path),p_patch:patch});if(error)throw error});
   }
 };
 
@@ -656,7 +659,11 @@ const LIB=()=>state.docs['library/main']||{};
 const sessions=()=>{const l=(state.docs['library/sessions']||{}).list;return Array.isArray(l)?l:[]};
 const maxes=()=>(state.docs['library/maxes']||{}).byEx||{};
 const maxFor=id=>{const m=maxes()[id];return m&&num(m.kg)?num(m.kg):null};
-const updateLib=p=>Store.update('library/main',p);
+const SH_KEYS=['exercises','customGroups','customWorks'];
+const SH=()=>state.docs['@shared/library/exercises']||null;
+const shSrc=()=>SH()||LIB();
+const updateLib=p=>{const a={},b={};Object.keys(p).forEach(k=>(SH_KEYS.includes(k)?a:b)[k]=p[k]);
+  if(Object.keys(a).length)Store.update('@shared/library/exercises',a);if(Object.keys(b).length)Store.update('library/main',b)};
 const saveSessions=list=>Store.set('library/sessions',{list:clone(list)});
 const weekList=()=>Object.entries(state.weeks).map(([id,w])=>({id,...w})).sort((a,b)=>a.num-b.num);
 const curWeek=()=>state.weeks[state.weekId];
@@ -665,9 +672,9 @@ const dayProg=(w,k)=>(w&&w.progress&&w.progress[k])||{};
 const dayMeals=(w,k)=>(w&&w.meals&&w.meals[k])||{};
 const patchWeek=p=>Store.update('weeks/'+state.weekId,p);
 const isAdmin=()=>state.role==='admin';
-const libArr=k=>Array.isArray(LIB()[k])?LIB()[k]:[];
-const getGroups=()=>[...DEFAULT_GROUPS,...(LIB().customGroups||[]).filter(g=>!DEFAULT_GROUPS.includes(g))];
-const getWorks=()=>[...DEFAULT_WORKS,...(LIB().customWorks||[]).filter(g=>!DEFAULT_WORKS.includes(g))];
+const libArr=k=>{const src=SH_KEYS.includes(k)?shSrc():LIB();return Array.isArray(src[k])?src[k]:[]};
+const getGroups=()=>[...DEFAULT_GROUPS,...(shSrc().customGroups||[]).filter(g=>!DEFAULT_GROUPS.includes(g))];
+const getWorks=()=>[...DEFAULT_WORKS,...(shSrc().customWorks||[]).filter(g=>!DEFAULT_WORKS.includes(g))];
 const findEx=id=>libArr('exercises').find(e=>e.id===id);
 function hasMeal(m){
   if(!m)return false;
@@ -858,6 +865,10 @@ function weightCard(){
 }
 /* ---------- novedades: añadir una entrada nueva arriba cada vez que se cambie la app ---------- */
 const CHANGELOG=[
+  {v:'2026-11-24',title:'Novedades',items:[
+    'Ejercicios compartidos: la biblioteca de ejercicios del entrenador es la misma para todos los alumnos. Lo que crea para uno, lo puede usar con los demás.',
+    'Las sesiones siguen siendo de cada alumno, pero el entrenador puede copiar una sesión de otro alumno desde la pestaña Sesiones.'
+  ]},
   {v:'2026-11-23c',title:'Novedades',items:[
     'En el desayuno y la merienda puedes marcar «No he bebido nada». El entrenador lo verá como «Bebida: Nada».'
   ]},
@@ -1361,6 +1372,21 @@ function weekView(w){
 }
 
 /* ----- SESIONES ----- */
+const otherStudents=()=>((window.SB_CONFIG||{}).students||[]).filter(x=>x.app!==CFG.app);
+async function loadImport(){
+  const apps=otherStudents().map(x=>x.app);state.modal={kind:'import',loading:true,data:[]};render();
+  const {data}=await sb.from('docs').select('app,data').in('app',apps).eq('path','library/sessions');
+  state.modal={kind:'import',loading:false,data:apps.map(a=>({app:a,name:(otherStudents().find(x=>x.app===a)||{}).name||a,list:((data||[]).find(r=>r.app===a)||{data:{}}).data.list||[]}))};render();
+}
+function importModal(m){
+  return `<div class="modal-bg" data-act="modal-bg"><div class="modal" role="dialog" aria-label="Copiar sesión">
+    <div class="modal-head"><div class="card-head" style="align-items:center"><h3>Copiar sesión a ${esc(CFG.student)}</h3><button class="btn small" data-act="modal-close">Cerrar</button></div>
+    <span class="muted" style="font-size:13px">Se crea una copia en ${esc(CFG.student)}. Si luego la cambias, la del otro alumno no se toca.</span></div>
+    <div class="modal-body">${m.loading?'<div class="muted">Cargando sesiones…</div>':m.data.map(g=>`<div class="label">De ${esc(g.name)}</div>
+      ${g.list.length?g.list.map(s=>{const n=(s.exercises||[]).length;return `<div class="sessrow"><div class="info"><b>${esc(s.name)}</b><span>${n} ejercicio${n===1?'':'s'}</span></div>
+        <div class="acts"><button class="btn small primary" data-act="sess-import" data-app="${esc(g.app)}" data-id="${esc(s.id)}">Copiar</button></div></div>`}).join(''):`<div class="empty"><span>${esc(g.name)} no tiene sesiones.</span></div>`}`).join('')}</div>
+  </div></div>`;
+}
 function sessView(){
   const list=sessions();
   if(state.editSess){const s=list.find(x=>x.id===state.editSess);if(s)return sessEditor(s);state.editSess=null}
@@ -1372,6 +1398,7 @@ function sessView(){
         <div class="acts"><button class="btn small primary" data-act="sess-edit" data-id="${s.id}">Editar</button><button class="btn small" data-act="sess-dup" data-id="${s.id}">Duplicar</button>
         <button class="btn small danger" data-act="sess-del" data-id="${s.id}">${state.confirm==='sdel-'+s.id?'¿Seguro?':'Borrar'}</button></div></div>`}).join('')}</div>`
       :`<div class="empty"><span>Todavía no hay sesiones. Ponle nombre a la primera y pulsa «Crear sesión».</span></div>`}
+    ${state.coach&&otherStudents().length?`<button class="btn block" data-act="sess-import-open" style="border-style:dashed">Copiar una sesión de ${esc(otherStudents().map(x=>x.name).join(' o '))}</button>`:''}
   </div>`;
 }
 function sessEditor(s){
@@ -1438,11 +1465,11 @@ function libView(){
   </div>
   <div class="card"><div class="card-head"><div><div class="label">Categorías</div><h3>Tipos de trabajo</h3></div></div>
     <span class="muted" style="font-size:13px">Los que añadas tú se pueden borrar con la ×.</span>
-    ${chipList(DEFAULT_WORKS,(LIB().customWorks||[]).filter(x=>!DEFAULT_WORKS.includes(x)),'work-del')}
+    ${chipList(DEFAULT_WORKS,(shSrc().customWorks||[]).filter(x=>!DEFAULT_WORKS.includes(x)),'work-del')}
     <div class="row"><div class="field"><input class="input" id="new-work" data-f="new-work" value="${esc(state.newWork)}" placeholder="Ej: Explosividad, Fuerza-resistencia…" aria-label="Nuevo tipo de trabajo"></div><button class="btn primary small" data-act="work-add">Añadir</button></div>
   </div>
   <div class="card"><div class="card-head"><div><div class="label">Categorías</div><h3>Partes del cuerpo</h3></div></div>
-    ${chipList(DEFAULT_GROUPS,(LIB().customGroups||[]).filter(x=>!DEFAULT_GROUPS.includes(x)),'group-del')}
+    ${chipList(DEFAULT_GROUPS,(shSrc().customGroups||[]).filter(x=>!DEFAULT_GROUPS.includes(x)),'group-del')}
     <div class="row"><div class="field"><input class="input" id="new-group" data-f="new-group" value="${esc(state.newGroup)}" placeholder="Ej: Cuello, Movilidad…" aria-label="Nueva parte del cuerpo"></div><button class="btn primary small" data-act="group-add">Añadir</button></div>
   </div>`;
 }
@@ -1450,6 +1477,7 @@ function libView(){
 /* ----- modals ----- */
 function modalHTML(){
   const m=state.modal;
+  if(m.kind==='import')return importModal(m);
   if(m.kind==='tg'){const me=state.role;const on=state.tgRoles&&state.tgRoles.includes(me);
     return `<div class="modal-bg" data-act="modal-bg" style="align-items:center"><div class="modal" role="dialog" aria-label="Avisos por Telegram" style="border-radius:20px">
       <div class="modal-body" style="gap:14px;padding-top:20px">
@@ -1694,6 +1722,11 @@ document.addEventListener('click',ev=>{
       patchWeek({days:{[k]:patch}});state.modal=null;toast(`Sesión «${s.name}» cargada`);break}
     case'day-to-sess':{const p=dayPlan(w,DAYS[state.gymDay].k);const name=p.title||('Entreno del '+DAYS[state.gymDay].n.toLowerCase());
       saveSessions([...sessions(),{id:uid(),name,exercises:getList('day').map(e=>({...e,uid:uid()}))}]);toast(`Guardada como sesión «${name}»`);break}
+    case'sess-import-open':loadImport();return;
+    case'sess-import':{const g=(state.modal.data||[]).find(x=>x.app===b.dataset.app);const s=g&&g.list.find(x=>x.id===b.dataset.id);if(!s)break;
+      const exists=sessions().some(x=>norm(x.name)===norm(s.name));
+      saveSessions([...sessions(),{id:uid(),name:exists?s.name+' (de '+g.name+')':s.name,exercises:(s.exercises||[]).map(e=>({...normEx(e),uid:uid()}))}]);
+      toast(`Sesión «${s.name}» copiada de ${g.name}`);state.modal=null;break}
     case'sess-new':{const name=(state.newSess||'').trim()||('Sesión '+(sessions().length+1));const id=uid();
       saveSessions([...sessions(),{id,name,exercises:[]}]);state.newSess='';state.editSess=id;window.scrollTo(0,0);break}
     case'sess-edit':state.editSess=b.dataset.id;window.scrollTo(0,0);break;
@@ -1705,11 +1738,11 @@ document.addEventListener('click',ev=>{
     case'exf-edit':{const e=findEx(b.dataset.id);if(e){state.exForm={name:e.name,group:e.group,work:e.work||'',editId:e.id,nw:!!e.nw};window.scrollTo(0,0)}break}
     case'exf-del':if(needConfirm('lexdel-'+b.dataset.id)){updateLib({exercises:libArr('exercises').filter(e=>e.id!==b.dataset.id)});toast('Ejercicio borrado de la biblioteca')}return;
     case'work-add':{const v=state.newWork.trim();if(!v)break;if(getWorks().some(x=>norm(x)===norm(v))){toast('Ese tipo ya existe.');break}
-      updateLib({customWorks:[...(LIB().customWorks||[]),v]});state.newWork='';break}
-    case'work-del':updateLib({customWorks:(LIB().customWorks||[]).filter(x=>x!==b.dataset.v)});break;
+      updateLib({customWorks:[...(shSrc().customWorks||[]),v]});state.newWork='';break}
+    case'work-del':updateLib({customWorks:(shSrc().customWorks||[]).filter(x=>x!==b.dataset.v)});break;
     case'group-add':{const v=state.newGroup.trim();if(!v)break;if(getGroups().some(x=>norm(x)===norm(v))){toast('Esa parte del cuerpo ya existe.');break}
-      updateLib({customGroups:[...(LIB().customGroups||[]),v]});state.newGroup='';break}
-    case'group-del':updateLib({customGroups:(LIB().customGroups||[]).filter(x=>x!==b.dataset.v)});break;
+      updateLib({customGroups:[...(shSrc().customGroups||[]),v]});state.newGroup='';break}
+    case'group-del':updateLib({customGroups:(shSrc().customGroups||[]).filter(x=>x!==b.dataset.v)});break;
     case'prog-ex':{const k=DAYS[state.gymDay].k;const g=dayProg(w,k);const u=b.dataset.uid;patchWeek({progress:{[k]:{done:{[u]:!(g.done&&g.done[u])}}}});break}
     case'prog-status':{const k=DAYS[state.gymDay].k;const g=dayProg(w,k);const nv=g.status===b.dataset.v?null:b.dataset.v;patchWeek({progress:{[k]:{status:nv}}});if(nv==='hecho')toast('¡Día hecho! Vamos Pino');break}
     case'meal-status':{const k=DAYS[state.foodDay].k;patchWeek({meals:{[k]:{[b.dataset.meal]:{status:b.dataset.v}}}});break}
