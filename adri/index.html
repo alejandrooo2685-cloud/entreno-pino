@@ -46,7 +46,7 @@ const C=window.SB_CONFIG;
 const sb=supabase.createClient(C.url,C.key,{auth:{persistSession:true,autoRefreshToken:true,storageKey:'entreno-session'}});
 const STUDENTS=(C.students||[]).map(x=>({...x,img:'../'+x.img}));
 const $=id=>document.getElementById(id);
-const head=`<div class="crest"><img src="img/pino.png" alt="Escudo del Pino F.S."><div><div class="stars">★★★</div><div class="club">Pino F.S.</div><div class="label">Preparación física</div></div></div>`;
+const head=`<div class="crest"><img src="img/pino.png" alt="Escudo de Pino Gym"><div><div class="stars">★★★</div><div class="club">Pino Gym</div><div class="label">Preparación física</div></div></div>`;
 function login(msg){
   $('app').innerHTML=head+`<h1>Entreno<br>Adri</h1><img class="lema" src="img/himno-lema.jpg" alt="Jugamos con el alma">
   <div class="card"><div class="label">Acceso del entrenador</div><span class="muted">Escribe tu contraseña. Solo hay que hacerlo una vez en cada dispositivo.</span>

@@ -423,6 +423,15 @@ body::before{background:var(--bg)}
 .bimg.sm span{position:absolute;left:0;right:0;bottom:0;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;background:rgba(0,0,0,.65);color:#fff;padding:3px 0;text-align:center}
 .bimg.sm.empty{display:block}
 .cmpcol .label{text-align:center}
+.cmp-sc{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;border-radius:12px;scrollbar-width:none;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}
+.cmp-sc::-webkit-scrollbar{display:none}
+.cmp-sc>.bimg{flex:0 0 100%;scroll-snap-align:center;scroll-snap-stop:always}
+.bimg.last{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.cmp-nav{display:flex;align-items:center;justify-content:center;gap:6px;min-height:34px}
+.cmp-nav .label{flex:1;min-width:0;font-size:11px;line-height:1.25}
+.cmp-ar{width:34px;height:34px;flex:none;border-radius:50%;border:1px solid var(--line);background:var(--surface-2);color:var(--ink);font-size:22px;line-height:1;padding:0;display:grid;place-items:center;cursor:pointer}
+.cmp-ar:disabled{opacity:.3;cursor:default}
+.cmp-pos{text-align:center;font-size:11px;align-self:center}
 
 /* v11: sobras + novedades */
 .lefto{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:600;cursor:pointer;margin-top:4px;padding:8px 10px;border:1px dashed var(--line);border-radius:10px;align-self:flex-start}
@@ -494,7 +503,7 @@ const state={
   weekId:null, tab:'entreno', gymDay:todayIdx<5?todayIdx:0, foodDay:todayIdx,
   modal:null, confirm:null, extraCat:'Alcohol', extraText:'', extraTime:'',
   exForm:{name:'',group:'Pecho',work:'',editId:null}, libSearch:'', maxSearch:'', newGroup:'', newWork:'',
-  newSess:'', editSess:null, uploading:null, pending:null, xa:{day:null,kind:'Fútbol',h:1,m:0}, rvDraft:{}, cmp:{a:null,b:null,view:'front'}, bEdit:null, loaded:{}, asked:{}, anEdit:null, weighEdit:null
+  newSess:'', editSess:null, uploading:null, pending:null, xa:{day:null,kind:'Fútbol',h:1,m:0}, rvDraft:{}, cmp:{i:0,view:'front'}, bEdit:null, loaded:{}, asked:{}, anEdit:null, weighEdit:null
 };
 
 /* ---------- store: Supabase (datos, fotos y cambios en directo) ---------- */
@@ -811,16 +820,30 @@ function bodyCardHTML(w,k,free){
     ${admin&&!(e.front||e.side)?`<span class="muted" style="font-size:13px">Juanma todavía no ha subido las fotos.</span>`:''}
   </div>`;
 }
+function setupCmp(){
+  const sc=document.getElementById('cmp-sc');if(!sc)return;
+  const n=+sc.dataset.n||0;const slides=[...sc.children];
+  const upd=i=>{i=Math.min(Math.max(0,i),n-1);state.cmp.i=i;const l=document.getElementById('cmp-lbl');if(l&&slides[i])l.textContent=slides[i].dataset.lbl;
+    const p=document.getElementById('cmp-pos');if(p&&n>1)p.textContent=`${i+1} de ${n} · desliza para cambiar`;
+    document.querySelectorAll('.cmp-ar').forEach(x=>{x.disabled=(+x.dataset.d<0)?i<=0:i>=n-1})};
+  const go=()=>{sc.scrollLeft=(state.cmp.i|0)*sc.clientWidth};go();requestAnimationFrame(go);
+  let t=null;sc.addEventListener('scroll',()=>{clearTimeout(t);t=setTimeout(()=>upd(Math.round(sc.scrollLeft/Math.max(1,sc.clientWidth))),60)},{passive:true});
+}
 function bodyCard(){
   const list=bodyEntries();const admin=isAdmin();const c=state.cmp;const v=c.view;
   const withV=list.filter(e=>e[v]);
   let a=withV.find(e=>e.id===c.a),b=withV.find(e=>e.id===c.b);
   if(!a)a=withV[0];if(!b)b=withV[withV.length-1];
   const opt=(sel)=>withV.map(e=>`<option value="${e.id}" ${sel&&sel.id===e.id?'selected':''}>${esc(bLabel(e))}</option>`).join('');
+  const last=withV[withV.length-1],olds=withV.slice(0,-1);
+  const ci=Math.min(Math.max(0,c.i|0),Math.max(0,olds.length-1));
   const cmp=withV.length>1?`<div class="seg" style="max-width:260px">${SLOTS.map(([sk,sn])=>`<button data-act="cmp-view" data-v="${sk}" aria-pressed="${v===sk}">${sn}</button>`).join('')}</div>
     <div class="cmp">
-      <div class="cmpcol"><select class="input" id="cmp-a" data-f="cmp-a" aria-label="Foto de antes">${opt(a)}</select><button class="bimg" data-act="lightbox" data-id="${esc(a[v])}"><img src="${blob(esc(a[v]))}" alt="Antes"></button><span class="label">Antes</span></div>
-      <div class="cmpcol"><select class="input" id="cmp-b" data-f="cmp-b" aria-label="Foto de después">${opt(b)}</select><button class="bimg" data-act="lightbox" data-id="${esc(b[v])}"><img src="${blob(esc(b[v]))}" alt="Después"></button><span class="label">Después</span></div>
+      <div class="cmpcol"><div class="cmp-sc" id="cmp-sc" data-n="${olds.length}">${olds.map(e=>`<button class="bimg" data-act="lightbox" data-id="${esc(e[v])}" data-lbl="${esc(bLabel(e))}"><img src="${blob(esc(e[v]))}" alt="${esc(bLabel(e))}" loading="lazy"></button>`).join('')}</div>
+        <div class="cmp-nav"><button class="cmp-ar" data-act="cmp-step" data-d="-1" aria-label="Semana anterior" ${ci<=0?'disabled':''}>‹</button><span class="label" id="cmp-lbl">${esc(bLabel(olds[ci]))}</span><button class="cmp-ar" data-act="cmp-step" data-d="1" aria-label="Semana siguiente" ${ci>=olds.length-1?'disabled':''}>›</button></div>
+        <span class="cmp-pos muted" id="cmp-pos">${olds.length>1?`${ci+1} de ${olds.length} · desliza para cambiar`:''}</span></div>
+      <div class="cmpcol"><button class="bimg last" data-act="lightbox" data-id="${esc(last[v])}"><img src="${blob(esc(last[v]))}" alt="Última foto"></button>
+        <div class="cmp-nav"><span class="label">Última · ${esc(bLabel(last))}</span></div></div>
     </div>`:'';
   let free='';
   if(!admin){const cw=state.weeks['w'+curNum()];const tk=DAYS[todayIdx].k;
@@ -865,6 +888,10 @@ function weightCard(){
 }
 /* ---------- novedades: añadir una entrada nueva arriba cada vez que se cambie la app ---------- */
 const CHANGELOG=[
+  {v:'2026-11-27',title:'Novedades',items:[
+    'Nuevo comparador de fotos en Semana → Físico: a la derecha siempre la última foto y a la izquierda desliza (o usa las flechas) para ir viendo las semanas anteriores. Arriba eliges Frente o Lado.',
+    'Nuevo escudo: Pino Gym, con una mancuerna.'
+  ]},
   {v:'2026-11-24',title:'Novedades',items:[
     'Ejercicios compartidos: la biblioteca de ejercicios del entrenador es la misma para todos los alumnos. Lo que crea para uno, lo puede usar con los demás.',
     'Las sesiones siguen siendo de cada alumno, pero el entrenador puede copiar una sesión de otro alumno desde la pestaña Sesiones.'
@@ -973,6 +1000,7 @@ function render(){
   if(!state.role){app.innerHTML=roleScreen();document.getElementById('modal').innerHTML='';return}
   if(!state.ready){app.innerHTML='<div class="loading"><img src="img/pino.png" alt="">Cargando datos…</div>';return}
   app.innerHTML=shell();
+  setupCmp();
   maybeAsk();
   maybeNews();
   document.getElementById('modal').innerHTML=state.modal?modalHTML():'';
@@ -982,7 +1010,7 @@ function loginScreen(){
   if(state.auth==='checking')return '<div class="loading"><img src="img/pino.png" alt="">Cargando…</div>';
   if(state.auth==='config')return '<div class="wrap loading">Falta configurar la conexión (config.js).</div>';
   return `<div class="role-bg"><div class="wrap role-screen">
-    <div class="crest-row"><img src="img/pino.png" alt="Escudo del Pino F.S."><div><div class="stars">★★★</div><div class="club">Pino F.S.</div><div class="label">Preparación física</div></div></div>
+    <div class="crest-row"><img src="img/pino.png" alt="Escudo de Pino Gym"><div><div class="stars">★★★</div><div class="club">Pino Gym</div><div class="label">Preparación física</div></div></div>
     <h1 class="splash-title">Entreno<br>${esc(CFG.student)} <span>&amp;</span> Adri</h1>
     <img class="lema" src="img/himno-lema.jpg" alt="Jugamos con el alma">
     <div class="card"><div class="label">Acceso</div>
@@ -996,7 +1024,7 @@ function loginScreen(){
 }
 function roleScreen(){
   return `<div class="role-bg"><div class="wrap role-screen">
-    <div class="crest-row"><img src="img/pino.png" alt="Escudo del Pino F.S."><div><div class="stars">★★★</div><div class="club">Pino F.S.</div><div class="label">Preparación física</div></div></div>
+    <div class="crest-row"><img src="img/pino.png" alt="Escudo de Pino Gym"><div><div class="stars">★★★</div><div class="club">Pino Gym</div><div class="label">Preparación física</div></div></div>
     <h1 class="splash-title">Entreno<br>Juanma <span>&amp;</span> Adri</h1>
     <img class="lema" src="img/himno-lema.jpg" alt="Jugamos con el alma">
     ${goalHTML()}
@@ -1645,7 +1673,8 @@ document.addEventListener('click',ev=>{
     case'up-body':{const k=b.dataset.day;const wn=+b.dataset.wn||w.num;pickFile({kind:'body',key:`bd-${wn}-${k}-${b.dataset.slot}`,weekNum:wn,day:k,slot:b.dataset.slot},'image/*');return}
     case'body-del':{const k=b.dataset.day,sl=b.dataset.slot;const wn=+b.dataset.wn||w.num;const list=Array.isArray(BD().entries)?clone(BD().entries):[];const e=list.find(x=>x.week===wn&&x.day===k);if(!e||!e[sl])break;
       if(!needConfirm('bdel-'+e[sl]))return;const old=e[sl];delete e[sl];saveBody({entries:list});if(state.assets)state.assets.delete(old).catch(()=>{});toast('Foto borrada');break}
-    case'cmp-view':state.cmp.view=b.dataset.v;break;
+    case'cmp-view':state.cmp.view=b.dataset.v;state.cmp.i=0;break;
+    case'cmp-step':{const sc=document.getElementById('cmp-sc');if(sc)sc.scrollBy({left:(+b.dataset.d)*sc.clientWidth,behavior:'smooth'});return}
     case'ban-edit':state.bEdit=b.dataset.id;break;
     case'ban-cancel':state.bEdit=null;break;
     case'ban-save':{const t=(document.getElementById('ban-'+b.dataset.id)?.value||'').trim();
@@ -1782,7 +1811,7 @@ document.addEventListener('change',ev=>{
   const el=ev.target;if(el.id==='xa-h')state.xa.h=+el.value;if(el.id==='xa-m')state.xa.m=+el.value;const f=el.dataset&&el.dataset.f;if(!f)return;
   try{hookChange(f,el)}catch(e){}
   if(f==='rv'){keepRv(el);return}
-  if(f==='cmp-a'||f==='cmp-b'){state.cmp[f==='cmp-a'?'a':'b']=el.value;render();return}const v=el.value;
+const v=el.value;
   const gk=DAYS[state.gymDay].k, fk=DAYS[state.foodDay].k;const ctx=el.dataset.ctx;
   switch(f){
     case'day-title':patchWeek({days:{[gk]:{title:v.trim()}}});break;
